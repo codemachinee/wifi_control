@@ -1,10 +1,8 @@
 import telebot
-import re
 from scapy.all import ARP, sniff
 import multiprocessing
 from apscheduler.schedulers.background import BackgroundScheduler
-from scapy.layers.l2 import Ether
-from scapy.sendrecv import srp
+import subprocess
 
 from paswords import *
 from database import *
@@ -39,53 +37,34 @@ def handle_arp(pkt):
 def check_users():
     print('check_users')
     for i in database().return_all('users'):
-        # if i[0] in filterlist:
-        #     pass
-        # elif get_mac_by_ip(i[1]) is True:
-        if get_mac_by_ip(i[0], i[1]) is True:
+        ping = ping_cheking(i[1])
+        if ping == 1:
             pass
         
-        else:
+        elif ping == 0:
             print(f'{i[2]} c мак адресом {i[0]} отключился')
             bot.send_message(admin_id, f'🔴 {i[2]} c мак адресом {i[0]} отключился')
             database().delete_user('users', i[0])
+        elif ping == 2:
+            print(f'отсутствует соединение')
+            bot.send_message(admin_id, f'отсутствует соединение')
 
 
-# def get_mac_by_ip(ip_address):
-#     arp = ARP(pdst=ip_address)
-#     ether = Ether(dst="ff:ff:ff:ff:ff:ff")  # Широковещательный запрос
-#     packet = ether / arp
-#
-#     result = srp(packet, timeout=3, verbose=0)[0]
-#
-#     for sent, received in result:
-#         return True
-#     return False
-
-
-def get_mac_by_ip(mac, ip):
-    # Создаем ARP-запрос для проверки IP-адреса
-    arp = ARP(pdst=ip)
-    ether = Ether(dst="ff:ff:ff:ff:ff:ff")  # Широковещательный запрос
-    packet = ether/arp
-    # Отправляем ARP-запрос и получаем ответы
-    result = srp(packet, timeout=3, iface=i_face, verbose=False)
-    responses = result[0]  # Получаем первый элемент кортежа, который содержит ответы
-    print(result)
-    print(responses)
-    if responses:
-        arp_response = responses[0][1]  # Получаем второй элемент кортежа, который содержит ответ ARP
-        print(arp_response)
-        # пример ответа: Ether / ARP is at 00:10:75:40:14:f1 says 192.168.1.66 / Padding
-        mac_pattern = r'(\b[0-9A-Fa-f:]+\b)'
-        mac_address = re.search(mac_pattern, str(arp_response)).group()
-        if mac == mac_address:
-            return True
-        else:
-            return False
-
+def ping_cheking(target_ip):
+# Выполняем пинг
+    ping_result = subprocess.run(["ping", '-n', "2", target_ip], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True)
+# Получаем код завершения пинга
+    ping_exit_code = ping_result.stdout.encode('windows-1251').decode('cp866')
+    print(ping_exit_code)
+    if ping_exit_code.count('Заданный узел недоступен.') >= 1:
+        return 0
+    elif ping_exit_code.find('Превышен интервал ожидания для запроса.') != -1:
+        return 1
+    elif ping_exit_code.find('число байт=') != -1:
+        return 1
     else:
-        return False
+        return 2
 
 
 @bot.message_handler(commands=['help'])
@@ -106,7 +85,7 @@ def start(message):
 @bot.message_handler(commands=['monitor'])
 def monitor(message):
     for i in database().return_all('users'):
-        bot.send_message(message.chat.id, f'MAC: {i[0]} - владелец: {i[1]}')
+        bot.send_message(message.chat.id, f'MAC: {i[0]} - владелец: {i[2]}')
 
 
 def monitoring():
